@@ -1,0 +1,21 @@
+{
+  "alert_id": "ALRT-2026-0917",
+  "raised_at": "2026-09-15T14:22:03Z",
+  "trigger_rule": "STRUCTURING_PATTERN",
+  "customer": {
+    "customer_id": "CUST-88421",
+    "name": "Marek Dvorak",
+    "country": "CZ",
+    "national_id": "CZ-760415-2231",
+    "date_of_birth": "1976-04-15"
+  },
+  "counterparty": {
+    "name": "Vantage Freight OU",
+    "country": "EE"
+  },
+  "transaction": {
+    "amount_usd": 48750.0,
+    "currency": "USD",
+    "executed_at": "2026-09-15T09:11:44Z"
+  }
+}
