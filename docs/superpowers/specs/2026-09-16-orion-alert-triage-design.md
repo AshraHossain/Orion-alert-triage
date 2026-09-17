@@ -81,6 +81,31 @@ manual loop or behind an MCP server.
 The runner requires tool results to be a `str` or content blocks, so the guard
 JSON-encodes the tools' dict results.
 
+**Verified by experiment, not only by reading the source.** A throwaway spike
+ran guarded tools through the real `tool_runner` (`anthropic` 1.6.0) against a
+mocked HTTP transport — no API key, no tokens — replaying the case flow below:
+three tools requested in one turn, the national ID leaked to
+`adverse_media_search`, a timeout, and a successful retry. Confirmed:
+
+- A scope refusal raised in the guard reaches the model as an `is_error` result,
+  and the refused tool's function never runs.
+- All results from one turn go back to the model together in a single message.
+- Tools in a turn run sequentially, in request order.
+- A tool's timeout followed by a successful retry leaves its credibility at 0.84
+  — a failure then a success — which also shows a scope refusal records no
+  outcome.
+
+Two requirements came out of it that reading alone had not made clear:
+
+- **Expected failures must be raised as `ToolError`.** A scope refusal or a
+  timeout is normal operation for ORION. Raised as a plain exception, the runner
+  logs a full stack trace for each one and shows the model the exception's
+  `repr` — `ScopeViolation('adverse_media_search may not receive: …')`. Raised as
+  `anthropic.lib.tools.ToolError`, the model receives only the message and
+  nothing is logged. A control run with plain exceptions confirmed both effects.
+- **`anthropic` 1.x uses `httpx2`, not `httpx`.** Any test that mocks the HTTP
+  layer must build its transport from `httpx2`.
+
 **Why this surface.** Three agent surfaces were considered. The Claude Agent SDK
 (`claude-agent-sdk`) is Claude Code as a library — it ships built-in file and
 bash tools that ORION has no use for, and it is a separate product from the API
