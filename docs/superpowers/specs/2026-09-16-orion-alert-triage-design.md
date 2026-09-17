@@ -59,11 +59,27 @@ The agent loop is driven by `client.beta.messages.tool_runner` from the
 `anthropic` Python SDK. The model decides which tools to call and in what
 order; the SDK runs the request → execute → loop cycle.
 
-ORION's four mechanisms live in the Tool Runner's per-turn hooks, which wrap
-tool execution:
+ORION's mechanisms wrap each tool before it is handed to the runner. Every
+registered tool is passed to the runner as a **guarded tool**: a function that,
+on each call,
 
-- the **before** hook enforces permission scope,
-- the **after** hook records outcomes and updates credibility.
+1. checks the call against the tool's permission scope and refuses it before
+   the real tool runs,
+2. runs the tool and times it,
+3. records success or failure with the credibility tracker and the audit trail,
+4. returns the result as a JSON string, or raises so the runner reports an error.
+
+**Verified against `anthropic` 1.6.0.** The Python Tool Runner exposes no
+before- or after-call hook. It iterates over the turn's `tool_use` blocks and
+calls each tool's `call(input)` itself, converting any exception into a
+`tool_result` with `is_error: true` (an `anthropic.lib.tools.ToolError` sets the
+content the model sees). Wrapping the function is therefore the seam, not a
+workaround: it is where the runner hands control to ORION's code. It also keeps
+the mechanisms independent of the loop — the same guarded tool works under a
+manual loop or behind an MCP server.
+
+The runner requires tool results to be a `str` or content blocks, so the guard
+JSON-encodes the tools' dict results.
 
 **Why this surface.** Three agent surfaces were considered. The Claude Agent SDK
 (`claude-agent-sdk`) is Claude Code as a library — it ships built-in file and
@@ -74,7 +90,7 @@ the orchestration this project exists to teach. A hand-written loop teaches the
 most but discards a maintained implementation for no gain here.
 
 The Tool Runner keeps the loop model-driven — which is what was asked for —
-while leaving all four mechanisms as the author's own code in the hooks.
+while leaving all four mechanisms as the author's own code in the guard.
 
 **Model:** `claude-opus-5`, adaptive thinking.
 
@@ -89,10 +105,36 @@ removing tools while a run is in progress. The registry renders the tool list
 handed to the Tool Runner.
 
 **Scope gate** (`scope.py`)
-The before-hook. Each tool declares which alert fields it is permitted to
-receive; a call carrying anything else is refused before the tool function
+Runs first in the guard. Each tool declares which alert fields it is permitted
+to receive; a call carrying anything else is refused before the tool function
 executes, and the refusal is returned to the model as an error result so it can
 retry differently.
+
+**What "carrying a field" means.** A tool call contains argument values chosen
+by the model, not alert field paths, so the gate matches on **values**. The
+alert is flattened to `path → value` (`customer.national_id → "CZ-760415-2231"`).
+Every path not in the tool's `allowed_fields` is restricted, and the call is
+refused if a restricted value appears in any string argument, at any nesting
+depth. The refusal names every restricted path found.
+
+Matching on values rather than argument names is what makes the gate hold: the
+model can put an ID number in a `name` argument or inside a free-text query, and
+a leak is a leak whatever the argument is called. Three rules keep it from
+refusing legitimate calls or missing trivially reformatted ones:
+
+- **Normalized comparison.** Values are compared lowercased with every
+  non-alphanumeric character removed, so `cz 760415 2231` still matches.
+- **Short values match whole arguments only.** A restricted value under four
+  normalized characters (a country code like `EE`) is refused only when an
+  argument equals it outright, not when it happens to occur inside a word.
+- **Shared values are permitted.** If a restricted field has the same value as
+  an allowed field — the customer and the counterparty in the same country —
+  the gate cannot tell which one the model used, so it allows it. Refusing
+  would block every legitimate call that mentions the country.
+
+The ceiling is known: an encoded or partially transcribed value (a base64 ID,
+the last four digits) will not match. That is a deliberate v1 limit, recorded
+in the code.
 
 Scope is field-level only. An operation dimension (read vs. write) was
 considered and cut: all four v1 tools are read-only, so that check would have no
@@ -101,7 +143,8 @@ check — it looks like protection without being any. It belongs in the phase th
 first introduces a tool that writes.
 
 **Credibility tracker** (`credibility.py`)
-The after-hook. Applies an exponential moving average over outcomes:
+Runs after the tool in the guard. Applies an exponential moving average over
+outcomes:
 
 ```
 score = (1 - alpha) * score + alpha * outcome
@@ -188,14 +231,18 @@ customer's national ID number.
 2. **Hand off.** The Tool Runner receives the alert, the tool list, and a system
    prompt describing what the analyst must establish.
 3. **First wave.** The model has no reason to sequence sanctions, media and
-   graph, so it requests all three in one turn; they execute concurrently.
-   Parallelism emerges from the model's planning rather than from a scheduler.
+   graph, so it requests all three in one turn. That is the parallelism ORION
+   demonstrates: the model decides the calls are independent, without a
+   scheduler declaring it. **Execution is still sequential** — the SDK's runner
+   (sync and async alike, as of `anthropic` 1.6.0) calls each tool in turn. With
+   simulated tools that cost is zero; with real network tools, concurrent
+   execution would need a manual loop or a wrapper that fans the calls out.
 4. **Scope refusal.** The model passes the national ID to
    `adverse_media_search`, seeking better matches. The gate refuses the call
    before execution and returns the reason. The model re-issues with name and
    country only. (Sending an identity number to an external news service is a
    genuine privacy failure; this is what the scope check is for.)
-5. **Tool failure.** `adverse_media_search` times out. The after-hook records
+5. **Tool failure.** `adverse_media_search` times out. The guard records
    the failure, lowers the score, and returns the error to the model as a failed
    result rather than raising. The model retries; the call succeeds; the score
    partially recovers.
@@ -227,7 +274,8 @@ are scripted, so the suite is deterministic.
 | Conflict resolver | Clear gap → more credible claim wins, loser marked overridden. Gap within threshold → `needs human` |
 | Decision rule | Table-driven over claim combinations (pure function) |
 | Audit trail | After a full run, every call appears with scope verdict and before/after scores |
-| The loop | Mocked SDK client returning a canned tool-call sequence; asserts hook ordering. No tokens spent |
+| The guard | A guarded tool called directly: a scope refusal never reaches the tool function; a raised failure lowers credibility and re-raises; a success returns a JSON string. No SDK needed |
+| The loop | Mocked SDK client returning a canned tool-call sequence through the real runner. No tokens spent |
 
 One live end-to-end test, marked and skipped by default, exercises the real
 model. It is the only proof the wiring works, so it exists; it never blocks the
@@ -250,14 +298,54 @@ Dependencies: `anthropic`, `python-dotenv`. Nothing else.
 |---|---|---|---|
 | 0 | Scaffold | Claude | uv project, pyproject, test harness, alert fixture |
 | 1 | Registry + tools | **User** | `ToolSpec`, registry, the four simulated tools |
-| 2 | Scope gate | **User** | The before-hook |
-| 3 | Credibility tracker | **User** | The after-hook, moving average, persistence |
-| 4 | Tool Runner wiring | Pair | Hooks meet the SDK; first live run |
+| 2 | Scope gate | **User** | Value-based permission check |
+| 3 | Credibility tracker | **User** | Moving average, floor, persistence |
+| 4 | Guard + Tool Runner wiring | Pair | Scope, credibility and audit wrapped around each tool; first live run |
 | 5 | Conflict resolver + decision rule | **User** | Resolution, override records, verdict |
 | 6 | Audit trail + CLI + README | Pair | Presentable output |
 
 Each phase ends with: tests passing → ponytail review → code review → one
 commit.
+
+## Open questions
+
+These need the author's decision before Phase 5. Neither blocks Phases 1–4.
+
+### 1. The flagship conflict is not a real contradiction
+
+The spec's conflict pits `sanctions_screen` ("customer: no match") against
+`transaction_graph` ("customer transacts with a flagged entity") on a single
+*customer risk* dimension. A compliance reviewer would reject that framing:
+the two claims are about different facts and are both true at once. A customer
+can be unsanctioned and still have a risky counterparty. Settling them by
+credibility would present a non-conflict as one, which is exactly the kind of
+manufactured certainty the resolver exists to avoid.
+
+**Recommended replacement: a name-match false positive**, the most common real
+conflict in sanctions screening. Make the dimension *is counterparty Vantage
+Freight OU the listed entity?*
+
+- `sanctions_screen` matches by **name** and says yes.
+- `transaction_graph` knows the counterparty's **registration number**, and it
+  differs from the listed entity's, so it says no.
+
+Both claims now answer the same question and cannot both be true. Credibility
+decides which evidence to trust, or the gap is too close and a human decides.
+That is a conflict an AML analyst would recognise.
+
+Cost if adopted: `transaction_graph` returns a registration number per
+counterparty; the Phase 1 tests for Task 5 gain one assertion. Phases 2–4 are
+unaffected.
+
+### 2. `sanctions_screen` cannot screen the counterparty
+
+Its declared scope is the customer's name, country and date of birth. Screening
+counterparties is standard practice, so a well-behaved model will try it and be
+refused — teaching the reader that the scope gate blocks correct behaviour.
+
+**Recommended:** add `counterparty.name` and `counterparty.country` to its
+`allowed_fields`. Required by open question 1's replacement; worth doing even
+without it. Changes `EXPECTED_SCOPES` in the Phase 1 Task 8 test.
 
 ## Out of scope for v1
 
