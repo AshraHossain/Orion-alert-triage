@@ -53,9 +53,14 @@ interesting paths exercised on every run and the test suite deterministic.
 - **Task 1:** Scaffold. Creates the alert fixture and test structure.
 - **Task 2:** `ToolSpec` — a frozen dataclass holding a tool's name, schema, callable, and permission scope. Tests: `test_tool_spec_carries_its_permission_scope`, `test_tool_spec_is_immutable`.
 
-### Phase 1: Registry & Scoring (in progress)
+### Phase 1: Registry & Scoring (✓ complete)
 
-- **Tasks 3–8:** Build the dynamic tool registry, the scope gate (permission enforcement), and credibility tracking. Each task has full test coverage written in advance.
+- **Tasks 3–8:** Dynamic tool registry, four simulated tools, and registry assembly.
+  - Task 3: Registry class with add/remove/get/names
+  - Task 4: to_tool_params() for API rendering
+  - Tasks 5–7: Simulated tools (sanctions_screen, transaction_graph, adverse_media_search, risk_score)
+  - Task 8: build_registry() that assembles the full registry
+- All 43 tests pass. Lint clean.
 - See [Phase 0–1 plan](docs/superpowers/plans/2026-09-16-orion-phase-0-1.md) for details.
 
 ### Phase 2–3: Advanced Mechanisms (planned)
