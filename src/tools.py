@@ -6,7 +6,10 @@ repeatability.
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
+
+from registry import Registry, ToolSpec
 
 
 class ToolTimeoutError(RuntimeError):
@@ -43,6 +46,7 @@ def sanctions_screen(name: str, country: str) -> dict[str, Any]:
     Returns whether the name hits any list and which lists were checked.
     Matching is case-insensitive.
     """
+    del country
     normalized = name.lower()
     hit = normalized in _WATCHLIST
     matches = [name] if hit else []
@@ -77,6 +81,7 @@ def make_adverse_media_search(fail_times: int = 1) -> Callable[[str, str], dict[
 
     def search(name: str, country: str) -> dict[str, Any]:
         nonlocal calls
+        del country
         calls += 1
 
         if calls <= fail_times:
@@ -132,3 +137,71 @@ def risk_score(
         "score": score,
         "band": band,
     }
+
+
+def build_registry() -> Registry:
+    """Assemble the complete registry for ORION alert triage.
+
+    Each build returns a fresh adverse_media_search tool with its own
+    failure counter, so multiple runs in one process do not interfere.
+    """
+    return Registry([
+        ToolSpec(
+            name="sanctions_screen",
+            description="Screen a name and country against international sanctions lists (OFAC, EU, UN). Returns whether the name hits and which lists were checked.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "The person or entity name"},
+                    "country": {"type": "string", "description": "ISO country code"},
+                },
+                "required": ["name", "country"],
+            },
+            run=sanctions_screen,
+            allowed_fields=frozenset(
+                {"customer.name", "customer.country", "customer.date_of_birth"}
+            ),
+        ),
+        ToolSpec(
+            name="adverse_media_search",
+            description="Search for adverse media coverage of a customer. Returns articles with headlines, sources and publication dates.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "The person or entity name"},
+                    "country": {"type": "string", "description": "ISO country code"},
+                },
+                "required": ["name", "country"],
+            },
+            run=make_adverse_media_search(),
+            allowed_fields=frozenset({"customer.name", "customer.country"}),
+        ),
+        ToolSpec(
+            name="transaction_graph",
+            description="Retrieve the transaction graph for a customer. Returns known counterparties and flags those with risk indicators.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "customer_id": {"type": "string", "description": "The customer ID"},
+                },
+                "required": ["customer_id"],
+            },
+            run=transaction_graph,
+            allowed_fields=frozenset({"customer.customer_id"}),
+        ),
+        ToolSpec(
+            name="risk_score",
+            description="Calculate overall risk from sanctions, adverse media, and transaction graph findings. Returns a score (0-100) and risk band (low/medium/high).",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "sanctions_hit": {"type": "boolean"},
+                    "adverse_count": {"type": "integer"},
+                    "flagged_counterparties": {"type": "integer"},
+                },
+                "required": ["sanctions_hit", "adverse_count", "flagged_counterparties"],
+            },
+            run=risk_score,
+            allowed_fields=frozenset(),
+        ),
+    ])
