@@ -105,3 +105,37 @@ def test_get_returns_the_spec() -> None:
 def test_get_on_an_unknown_tool_is_an_error() -> None:
     with pytest.raises(KeyError, match="ghost"):
         Registry().get("ghost")
+
+
+def test_to_tool_params_renders_what_the_api_expects() -> None:
+    """The API wants exactly name, description and input_schema — no more.
+
+    ``allowed_fields`` is ORION's own business: the scope gate reads it, and
+    sending it to the API would be a meaningless key in the request.
+    """
+    registry = Registry([make_spec("alpha")])
+
+    params = registry.to_tool_params()
+
+    assert params == [
+        {
+            "name": "alpha",
+            "description": "description of alpha",
+            "input_schema": {"type": "object", "properties": {}, "required": []},
+        }
+    ]
+
+
+def test_to_tool_params_is_sorted_like_names() -> None:
+    registry = Registry([make_spec("zulu"), make_spec("alpha")])
+
+    assert [param["name"] for param in registry.to_tool_params()] == ["alpha", "zulu"]
+
+
+def test_to_tool_params_reflects_a_removed_tool() -> None:
+    """This is the whole point of a *dynamic* registry."""
+    registry = Registry([make_spec("alpha"), make_spec("beta")])
+
+    registry.remove("beta")
+
+    assert [param["name"] for param in registry.to_tool_params()] == ["alpha"]

@@ -63,3 +63,19 @@ class Registry:
     def __len__(self) -> int:
         """Return the number of registered tools."""
         return len(self._specs)
+
+    def to_tool_params(self) -> list[dict[str, Any]]:
+        """Render the registry as Anthropic API tool parameters.
+
+        Returns tool definitions in sorted order, carrying only the fields
+        the API expects: name, description, and input_schema.
+        """
+        return [
+            {
+                "name": spec.name,
+                "description": spec.description,
+                "input_schema": spec.input_schema,
+            }
+            for spec_name in self.names()
+            for spec in [self._specs[spec_name]]
+        ]
