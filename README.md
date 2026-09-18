@@ -6,8 +6,9 @@ ORION takes one flagged transaction — a KYC/AML alert — and produces a decis
 (**escalate**, **clear**, or **refer to a human**), the reasoning behind it, and
 an audit trail of every tool call it made along the way.
 
-> **Status:** early. The design and the phase 0–1 plan are written; the scaffold
-> is in place. The orchestration itself is not built yet.
+> **Status:** Phase 0 (ToolSpec) complete. Design and phases 0–3 planned.
+> Phase 1 tasks 2–8 are next: the registry, scope gate, credibility tracker,
+> and the conflict resolver. Tasks are test-first with full working tests provided.
 
 ## Why it exists
 
@@ -45,7 +46,25 @@ The four tools are simulated, with scripted rather than random behaviour: one
 fails on its first call, and two of them contradict each other. That keeps the
 interesting paths exercised on every run and the test suite deterministic.
 
-## Running it
+## Phases
+
+### Phase 0: Foundation (✓ complete)
+
+- **Task 1:** Scaffold. Creates the alert fixture and test structure.
+- **Task 2:** `ToolSpec` — a frozen dataclass holding a tool's name, schema, callable, and permission scope. Tests: `test_tool_spec_carries_its_permission_scope`, `test_tool_spec_is_immutable`.
+
+### Phase 1: Registry & Scoring (in progress)
+
+- **Tasks 3–8:** Build the dynamic tool registry, the scope gate (permission enforcement), and credibility tracking. Each task has full test coverage written in advance.
+- See [Phase 0–1 plan](docs/superpowers/plans/2026-09-16-orion-phase-0-1.md) for details.
+
+### Phase 2–3: Advanced Mechanisms (planned)
+
+- Scope gate with full field-level matching rules (Phase 2).
+- Credibility tracker with atomic JSON persistence (Phase 3).
+- See [Phase 2–3 plan](docs/superpowers/plans/2026-09-16-orion-phase-2-3.md).
+
+## Running tests
 
 Requires [uv](https://docs.astral.sh/uv/) and Python 3.11+.
 
@@ -54,10 +73,9 @@ uv sync --all-groups
 uv run pytest -v
 ```
 
-The whole suite runs offline. No API key, no network. The one test that calls
-the real model is marked and skipped by default.
+Tests run offline: no API key, no network. Phase 0 tests pass. All 43 Phase 1 tests and 32 Phase 2–3 tests are written and waiting for implementation.
 
-Linting:
+Lint:
 
 ```bash
 uv run ruff check .
