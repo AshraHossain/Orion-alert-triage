@@ -63,10 +63,21 @@ interesting paths exercised on every run and the test suite deterministic.
 - All 43 tests pass. Lint clean.
 - See [Phase 0–1 plan](docs/superpowers/plans/2026-09-16-orion-phase-0-1.md) for details.
 
-### Phase 2–3: Advanced Mechanisms (planned)
+### Phase 2: Scope Gate (in progress)
 
-- Scope gate with full field-level matching rules (Phase 2).
-- Credibility tracker with atomic JSON persistence (Phase 3).
+- **Tasks 9–11:** Permission scope enforcement (flatten, gate, matching rules)
+  - Task 9: `flatten()` — convert nested alert to flat key-value
+  - Task 10: `check_scope()` — simplest gate implementation
+  - Task 11: Full matching rules (substring for long values, exact for short)
+- 11 of 13 tests passing. Final refinements needed.
+
+### Phase 3: Credibility Tracker (planned)
+
+- **Tasks 12–14:** Credibility scoring with persistence
+  - Task 12: Update rule — `score = (1 − α) × score + α × outcome`, with floor
+  - Task 13: CredibilityStore — in-memory per-tool scores
+  - Task 14: Persistence — atomic JSON save/load
+- Full test plan ready with 32 tests (Phase 2–3 combined).
 - See [Phase 2–3 plan](docs/superpowers/plans/2026-09-16-orion-phase-2-3.md).
 
 ## Running tests
