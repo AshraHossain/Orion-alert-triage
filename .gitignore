@@ -25,3 +25,9 @@ outputs/*
 .DS_Store
 .idea/
 .vscode/
+
+# graphify: keep the graph, not its caches
+graphify-out/*
+!graphify-out/GRAPH_REPORT.md
+!graphify-out/graph.html
+!graphify-out/graph.json
