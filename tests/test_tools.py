@@ -7,6 +7,7 @@ scripted, so a test run never depends on chance, a clock, or a network.
 from __future__ import annotations
 
 import pytest
+
 from tools import (
     ToolTimeoutError,
     make_adverse_media_search,

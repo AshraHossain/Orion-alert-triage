@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import FrozenInstanceError
 
 import pytest
+
 from registry import Registry, ToolSpec
 
 
